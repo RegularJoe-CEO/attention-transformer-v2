@@ -27,19 +27,18 @@ cargo run --release --example energy_sweep >"$OUT"
 
 echo "=== GPU power during cuda_bench (from dmon) ==="
 if [[ -f "$DMON_LOG" ]]; then
-  # dmon rows: "  0  117  45  ..." — power (W) is field 2 after GPU index
-  awk '
-    /^[[:space:]]*[0-9]+[[:space:]]+[0-9]+/ {
-      pwr = $2 + 0
-      if (pwr > 0) { a[++n] = pwr; sum += pwr }
-    }
-    END {
-      if (n < 1) { print " (no dmon samples — check", FILENAME, ")"; exit }
-      asort(a)
-      med = (n % 2) ? a[(n + 1) / 2] : (a[n / 2] + a[n / 2 + 1]) / 2
-      printf " samples: %d  median: %.1f W  mean: %.1f W  min: %.0f W  max: %.0f W\n", n, med, sum / n, a[1], a[n]
-    }
-  ' "$DMON_LOG"
+  # dmon data rows: "  0  117  45  ..." — power (W) is field 2 (POSIX awk; no gawk asort)
+  PWRS=$(awk '/^[[:space:]]*[0-9]+[[:space:]]+[0-9]+/ { p=$2+0; if (p>=50) print p }' "$DMON_LOG" | sort -n)
+  if [[ -z "$PWRS" ]]; then
+    echo " (no dmon samples >= 50 W — check $DMON_LOG)"
+  else
+    n=$(echo "$PWRS" | wc -l | tr -d ' ')
+    med=$(echo "$PWRS" | awk '{a[NR]=$1} END{n=NR; print (n%2)?a[(n+1)/2]:(a[n/2]+a[n/2+1])/2}')
+    mean=$(echo "$PWRS" | awk '{s+=$1} END{print s/NR}')
+    min=$(echo "$PWRS" | head -1)
+    max=$(echo "$PWRS" | tail -1)
+    echo " samples: $n  median: $med W  mean: $mean W  min: $min W  max: $max W"
+  fi
   echo " full log: $DMON_LOG"
 fi
 
