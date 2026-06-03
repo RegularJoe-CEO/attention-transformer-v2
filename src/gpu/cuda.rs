@@ -522,23 +522,23 @@ impl CudaWallerBuffers {
             scale,
             self.stream,
         );
+        cuda_stream_synchronize(self.stream);
+        let kernel_ms = t1.elapsed().as_secs_f64() * 1000.0;
+
         let mut host_out = if need_output {
             vec![0.0f32; total]
         } else {
             Vec::new()
         };
-        let t2 = std::time::Instant::now();
-        if need_output {
+        let d2h_ms = if need_output {
+            let t2 = std::time::Instant::now();
             cuda_memcpy_d2h_async(
                 host_out.as_mut_ptr() as *mut c_void,
                 self.d_out as *const c_void,
                 byte_len,
                 self.stream,
             );
-        }
-        cuda_stream_synchronize(self.stream);
-        let kernel_ms = t1.elapsed().as_secs_f64() * 1000.0;
-        let d2h_ms = if need_output {
+            cuda_stream_synchronize(self.stream);
             t2.elapsed().as_secs_f64() * 1000.0
         } else {
             0.0

@@ -16,5 +16,7 @@ if ! command -v cargo >/dev/null 2>&1; then
   source "$CARGO_HOME/env"
   export PATH="$CARGO_HOME/bin:/usr/local/cuda/bin:${PATH:-}"
 fi
-command -v cargo >/dev/null && echo "pod_env: cargo $(cargo -V)"
-command -v nvcc >/dev/null && echo "pod_env: nvcc $(nvcc --version | grep release | head -1)" || echo "pod_env: WARN nvcc not in PATH"
+command -v cargo >/dev/null && echo "pod_env: $(cargo --version)"
+command -v nvcc >/dev/null && echo "pod_env: $(nvcc --version | grep -o 'release [0-9.]*' | head -1)" || echo "pod_env: WARN nvcc not in PATH"
+echo "pod_env: INSTALL_DIR=$INSTALL_DIR"
+echo "pod_env: run → source scripts/pod_env.sh && bash scripts/gpu_quick.sh"
