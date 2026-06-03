@@ -1,0 +1,81 @@
+════════════════════════════════════════════════════════════════════════
+   attention-transformer — RunPod CUDA Verification Check
+   Mon Jun  1 23:47:38 UTC 2026
+════════════════════════════════════════════════════════════════════════
+
+=== 0. Purpose ===
+This is the entry-point verification for the experimental CUDA path.
+The pure-Rust f32 CPU path is the canonical source of truth.
+CUDA is considered 'verified' only after this harness passes on actual
+NVIDIA hardware with documented receipts and numerical diff.
+
+=== 1. System Information ===
+Linux 08b434523dfb 6.8.0-51-generic #52~22.04.1-Ubuntu SMP PREEMPT_DYNAMIC Mon Dec  9 15:00:52 UTC 2 x86_64 x86_64 x86_64 GNU/Linux
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+
+=== 2. NVIDIA GPU ===
+NVIDIA-SMI 580.126.09   Driver Version: 580.126.09   CUDA Version: 13.0
+GPU 0: NVIDIA H100 NVL  —  95830MiB total, 35C, P0, 65W/310W
+
+=== 3. CUDA Toolkit ===
+nvcc: NVIDIA (R) Cuda compiler driver
+Cuda compilation tools, release 12.4, V12.4.131
+CUDA_VERSION=12.4.1
+
+=== 4. Rust Toolchain ===
+rustc 1.96.0 (ac68faa20 2026-05-25)
+cargo 1.96.0 (30a34c682 2026-05-25)
+
+=== 5. Git State ===
+branch: main
+commit: 206e637c165a7aedb551ca564336b9269752d0f5
+
+=== 6. Build with CUDA Feature ===
+CUDA feature enabled — building native kernels.
+attention-transformer (lib) generated 25 warnings (all non-blocking:
+unexpected_cfgs for `cuda_compilation_failed`, unused variables,
+duplicate `#[inline]` in src/linalg.rs:1270).
+Finished `release` profile [optimized] target(s).
+
+=== 7. Run CUDA Verification Harness ===
+═══════════════════════════════════════════════════════════════════════
+   attention-transformer — CUDA VERIFICATION
+   Proving CUDA kernels match the verified Rust reference + receipts
+═══════════════════════════════════════════════════════════════════════
+
+Running Rust reference (waller_operator)...
+  Rust time:    25.27µs
+  Rust receipt: 3bef791e5b9394bfdbc4341f2d52f3b2b64108cd6e0ba4d90c2a2cdd1ff407d9
+
+Attempting CUDA path (via waller_operator_cuda_blocking)...
+  CUDA path executed successfully
+  CUDA receipt: 35514da8d0f9cb434c0f7b9ae3affc9ed74b5c98e94cae2264a7da6b6b9e89b2
+  Max absolute diff vs Rust: 5.96e-8
+  Receipts identical: false
+  Mean absolute diff vs Rust: 9.63e-9
+
+--- CUDA Verification Standard (RunPod / rented hardware) ---
+  CUDA bit-exact with CPU (Standard A): false
+  Tolerance verdict (Standard B): PASS
+    (max_abs <= 1e-4, mean_abs <= 1e-5, NaN/Inf == 0)
+
+✅ VERIFIED (Standard B): CUDA is deterministic and within first-milestone tolerance.
+   (This is acceptable for the initial RunPod correctness gate.)
+
+Energy & Performance (calcs per joule focus):
+  Estimated HBM traffic reduction vs classic: -14.3%
+  Higher ops/joule from keeping attention on-chip (registers/SMEM).
+  (Full mega-kernel fusion of MLP + WNSM will multiply this effect.)
+
+--- Full WNSM_GAE_Decoder CUDA dispatch test (forward_cuda vs CPU reference) ---
+  CPU receipt:   0ae659948eabc3fa1212b84d9a2006c707c28ba4209ce28410df676d38d37ada
+  CUDA receipt:  0ae659948eabc3fa1212b84d9a2006c707c28ba4209ce28410df676d38d37ada
+  Max diff:      0.00e0
+  Receipts match: true
+  ✅ FULL DECODER CUDA PATH VERIFIED (bit-identical receipts + output)
+
+═══════════════════════════════════════════════════════════════════════
+
+=== Done ===
+Full log saved to: runpod_cuda_check_20260601_234738.log
+════════════════════════════════════════════════════════════════════════
