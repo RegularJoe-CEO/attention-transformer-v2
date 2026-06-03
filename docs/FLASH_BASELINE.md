@@ -8,8 +8,11 @@
 cd /workspace/attention-transformer-v2
 git pull
 source scripts/pod_env.sh
+# Args = ITERS SEQ HIDDEN HEADS (same as cuda_bench)
 bash scripts/compare_flash_pod.sh 200 1024 1024 16
 ```
+
+**Common mistake:** `200 1024 1024 16` means iters=200, seq=1024, heads=**16** — not seq=200, heads=1024.
 
 Outputs:
 

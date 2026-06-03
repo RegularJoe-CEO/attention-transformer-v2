@@ -116,6 +116,12 @@ def main() -> None:
         if HAS_FLASH and dtype in (torch.float16, torch.bfloat16):
             flash_med = bench_flash(q, k, v, iters, warmup)
             print(f" flash_attn ({dtype_name}, causal)   median: {flash_med:7.3f} ms")
+            if waller_ms is not None:
+                ratio_f = waller_ms / flash_med
+                print(
+                    f" Waller f32 / Flash fp16 ratio: {ratio_f:.2f}x  "
+                    "(dtype mismatch — fair fight needs FP8 TRADE or f32 Flash)"
+                )
         elif dtype == torch.float16 and not HAS_FLASH:
             print(
                 " flash_attn: not installed (pip install flash-attn on pod for true Flash-2 row)"
