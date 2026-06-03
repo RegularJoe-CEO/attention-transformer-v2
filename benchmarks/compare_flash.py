@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Same-pod attention baseline: PyTorch SDPA (+ optional flash-attn) vs Waller cuda_bench shape.
+"""Same-pod attention baseline: PyTorch SDPA (+ flash-attn) vs Waller cuda_bench shape.
 
-Usage (on RunPod, after source scripts/pod_env.sh):
-  python3 benchmarks/compare_flash.py [SEQ] [HIDDEN] [HEADS] [ITERS]
+Usage:
+  python3 benchmarks/compare_flash.py SEQ HIDDEN HEADS ITERS [WALLER_MS]
 
-Fairness notes:
-  - Waller TRADE cuda_bench is f32, single batch, causal.
-  - Flash-Attn ships f16/bf16; SDPA may pick cuDNN Flash kernel on H100.
-  - Compare f32 SDPA row for dtype parity; f16 Flash row for "production Flash speed".
+On H100, default SDPA often dispatches to the Flash/cuDNN backend (very fast).
+We also print SDPA-math (Flash disabled) for a less misleading f32 row.
 """
 
 from __future__ import annotations
@@ -26,11 +24,14 @@ try:
 except ImportError:
     HAS_FLASH = False
 
+# Match cuda_bench FLOP model: 4 * seq^2 * head_dim * heads
+def attn_gflops(seq: int, head_dim: int, heads: int) -> float:
+    return 4.0 * (seq**2) * head_dim * heads / 1e9
+
 
 def median_ms(samples: list[float]) -> float:
     s = sorted(samples)
-    n = len(s)
-    return s[n // 2]
+    return s[len(s) // 2]
 
 
 def bench_sdpa(
@@ -39,21 +40,30 @@ def bench_sdpa(
     v: torch.Tensor,
     iters: int,
     warmup: int,
+    *,
+    enable_flash: bool,
+    enable_mem_efficient: bool,
+    enable_math: bool,
 ) -> float:
     scale = 1.0 / math.sqrt(q.shape[-1])
-    for _ in range(warmup):
-        F.scaled_dot_product_attention(
-            q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True, scale=scale
-        )
-    torch.cuda.synchronize()
-    times: list[float] = []
-    for _ in range(iters):
-        t0 = time.perf_counter()
-        F.scaled_dot_product_attention(
-            q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True, scale=scale
-        )
+    with torch.backends.cuda.sdp_kernel(
+        enable_flash=enable_flash,
+        enable_mem_efficient=enable_mem_efficient,
+        enable_math=enable_math,
+    ):
+        for _ in range(warmup):
+            F.scaled_dot_product_attention(
+                q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True, scale=scale
+            )
         torch.cuda.synchronize()
-        times.append((time.perf_counter() - t0) * 1000.0)
+        times: list[float] = []
+        for _ in range(iters):
+            t0 = time.perf_counter()
+            F.scaled_dot_product_attention(
+                q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True, scale=scale
+            )
+            torch.cuda.synchronize()
+            times.append((time.perf_counter() - t0) * 1000.0)
     return median_ms(times)
 
 
@@ -64,7 +74,6 @@ def bench_flash(
     iters: int,
     warmup: int,
 ) -> float:
-    # flash_attn expects (batch, seqlen, nheads, headdim)
     for _ in range(warmup):
         flash_attn_func(q, k, v, dropout_p=0.0, causal=True)
     torch.cuda.synchronize()
@@ -75,6 +84,13 @@ def bench_flash(
         torch.cuda.synchronize()
         times.append((time.perf_counter() - t0) * 1000.0)
     return median_ms(times)
+
+
+def print_row(label: str, ms: float, gflops: float, waller_ms: float | None) -> None:
+    gflops_per_s = gflops / (ms / 1000.0) if ms > 0 else 0.0
+    print(f" {label:<32} median: {ms:7.3f} ms  (~{gflops_per_s:6.0f} GFLOP/s)")
+    if waller_ms is not None:
+        print(f"   Waller f32 / this row: {waller_ms / ms:.2f}x  (>1 = Waller slower)")
 
 
 def main() -> None:
@@ -88,6 +104,7 @@ def main() -> None:
         raise SystemExit("hidden must be divisible by heads")
     head_dim = hidden // heads
     batch = 1
+    gflops = attn_gflops(seq, head_dim, heads)
 
     if not torch.cuda.is_available():
         raise SystemExit("CUDA required")
@@ -97,44 +114,43 @@ def main() -> None:
     print("=" * 60)
     print(f" batch=1 seq={seq} hidden={hidden} heads={heads} head_dim={head_dim}")
     print(f" iters={iters} warmup={warmup} device={torch.cuda.get_device_name(0)}")
+    print(f" nominal attn GFLOPs/iter: {gflops:.3f} (cuda_bench formula)")
     print("-" * 60)
 
-    waller_ms = None
-    if len(sys.argv) > 5:
-        waller_ms = float(sys.argv[5])
-        print(f" Waller KERNEL-ONLY (from cuda_bench): {waller_ms:.3f} ms")
+    waller_ms = float(sys.argv[5]) if len(sys.argv) > 5 else None
+    if waller_ms is not None:
+        print(f" Waller KERNEL-ONLY (cuda_bench): {waller_ms:.3f} ms")
+        print_row("Waller (effective)", waller_ms, gflops, None)
         print("-" * 60)
 
     for dtype_name, dtype in [("fp32", torch.float32), ("fp16", torch.float16)]:
+        print(f" [{dtype_name}]")
         q = torch.randn(batch, seq, heads, head_dim, device="cuda", dtype=dtype)
         k = torch.randn(batch, seq, heads, head_dim, device="cuda", dtype=dtype)
         v = torch.randn(batch, seq, heads, head_dim, device="cuda", dtype=dtype)
 
-        sdpa_med = bench_sdpa(q, k, v, iters, warmup)
-        print(f" PyTorch SDPA ({dtype_name}, causal)  median: {sdpa_med:7.3f} ms")
+        # What PyTorch picks by default on H100 (usually Flash-sdpa)
+        sdpa_auto = bench_sdpa(
+            q, k, v, iters, warmup, enable_flash=True, enable_mem_efficient=True, enable_math=True
+        )
+        print_row("SDPA auto (Flash/mem/math allowed)", sdpa_auto, gflops, waller_ms)
 
-        if HAS_FLASH and dtype in (torch.float16, torch.bfloat16):
+        # Flash disabled — closer to "classic" f32 matmul attention (still cuBLAS-tuned)
+        sdpa_math = bench_sdpa(
+            q, k, v, iters, warmup, enable_flash=False, enable_mem_efficient=False, enable_math=True
+        )
+        print_row("SDPA math-only (Flash OFF)", sdpa_math, gflops, waller_ms)
+
+        if HAS_FLASH and dtype == torch.float16:
             flash_med = bench_flash(q, k, v, iters, warmup)
-            print(f" flash_attn ({dtype_name}, causal)   median: {flash_med:7.3f} ms")
-            if waller_ms is not None:
-                ratio_f = waller_ms / flash_med
-                print(
-                    f" Waller f32 / Flash fp16 ratio: {ratio_f:.2f}x  "
-                    "(dtype mismatch — fair fight needs FP8 TRADE or f32 Flash)"
-                )
-        elif dtype == torch.float16 and not HAS_FLASH:
-            print(
-                " flash_attn: not installed (pip install flash-attn on pod for true Flash-2 row)"
-            )
-
-        if waller_ms is not None and dtype == torch.float32:
-            ratio = waller_ms / sdpa_med
-            print(f" Waller f32 / SDPA f32 ratio: {ratio:.2f}x  (>1.0 = Waller slower)")
+            print_row("flash_attn 2.x causal", flash_med, gflops, waller_ms)
+        elif dtype == torch.float16:
+            print(" flash_attn: not installed")
 
     print("=" * 60)
-    print(" Run Waller: cargo run --release --features cuda --example cuda_bench --")
-    print(f"   {iters} {seq} {hidden} {heads}")
-    print(" Then re-run with KERNEL-ONLY median ms as 5th arg to this script.")
+    print(" Verdict: if SDPA auto ~0.05 ms and Waller ~2.8 ms, Flash-class kernels win")
+    print(" on this H100 today. Waller f32 register path ~50x slower on wall-clock.")
+    print(" Next: FP16/BF16 TRADE, FP8, or compete on WNSM + J/token — not naive energy.csv.")
     print("=" * 60)
 
 
