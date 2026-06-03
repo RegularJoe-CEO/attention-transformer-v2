@@ -18,7 +18,8 @@ echo "=== Build (cuda + flash-bridge) ==="
 cargo build --release --features cuda,flash-bridge
 
 echo "--- Rust TRADE attention (flash-bridge @ LUXI_TRADE_ATTN=$LUXI_TRADE_ATTN) ---"
-cargo run --release --features cuda,flash-bridge --example cuda_bench -- 50 "$SEQ" "$HIDDEN" "$HEADS" 2>&1 | grep -E "TRADE attention|KERNEL-ONLY|median"
+cargo run --release --features cuda,flash-bridge --example cuda_bench -- 50 "$SEQ" "$HIDDEN" "$HEADS" 2>&1 | tee /tmp/cuda_bench_trade.log
+grep -E "TRADE attention|flash-bridge|KERNEL-ONLY|median|Error|panic|bridge" /tmp/cuda_bench_trade.log || true
 
 echo "--- Flash attention only (TRADE v3 core) ---"
 python3 benchmarks/trade_attn_flash_only.py 50 "$SEQ" "$HIDDEN" "$HEADS"
