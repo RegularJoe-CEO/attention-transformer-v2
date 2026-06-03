@@ -5,10 +5,12 @@
 set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/workspace/attention-transformer-v2}"
-export PATH="/usr/local/cuda/bin:${PATH:-}"
-export CUDA_ARCH="${CUDA_ARCH:-90}"
 export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
 export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+# shellcheck source=/dev/null
+[[ -f "$CARGO_HOME/env" ]] && source "$CARGO_HOME/env"
+export PATH="$CARGO_HOME/bin:/usr/local/cuda/bin:${PATH:-}"
+export CUDA_ARCH="${CUDA_ARCH:-90}"
 
 LOGFILE="${INSTALL_DIR}/runpod_v2_test_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -a "$LOGFILE") 2>&1

@@ -1,13 +1,23 @@
 # attention-transformer-v2
 
-**HyperScale energy-efficient attention transformer (v2)** — unified engine assembled from audit repos; v1 [`attention-transformer`](../attention-transformer) remains frozen.
+**HyperScale energy-efficient attention transformer (v2)** — goal: **maximum ops/joule and commercial ms/layer**, not determinism-first.
 
-- Lineage: [`docs/V2_LINEAGE.md`](docs/V2_LINEAGE.md) · Provenance: [`SOURCES.md`](SOURCES.md)
-- New in v2: `hyperstack` orchestration, `standard_attention` equivalence gate, `hyperwall_bench`
+- Mission: [`docs/V2_MISSION.md`](docs/V2_MISSION.md) — TRADE (GPU) = product; AUDIT (CPU) = correctness gate only
+- Lineage: [`docs/V2_LINEAGE.md`](docs/V2_LINEAGE.md) · RunPod: [`docs/POD_CLONE.md`](docs/POD_CLONE.md)
+
+**TRADE lane (CUDA):** fused Waller attention, minimal HBM traffic, `cuda_bench` / `cuda_verify`.  
+**AUDIT lane (CPU):** optional f32 + receipts to prove Waller ≡ softmax — inherited from v1, not the v2 headline.
+
+This engine optimizes **data movement (joules)** via O(N) Waller attention and fused layers. Deterministic CPU math is a **verification byproduct**, not the primary objective.
+
+---
+
+<details>
+<summary>v1 heritage — deterministic / quantum-trader edition (click to expand)</summary>
 
 **The Deterministic Inference Engine for High-Stakes Quantitative Workloads — The Quantum Trader Edition**
 
-This is a production-grade, bit-exact, auditable transformer inference engine designed specifically for environments where **reproducibility, auditability, and energy efficiency are non-negotiable** — quantitative trading desks, quantum trading strategies, model risk management, regulated AI systems, and scientific computing.
+This is a production-grade, bit-exact, auditable transformer inference engine designed for environments where **reproducibility, auditability, and energy efficiency are non-negotiable** — quantitative trading desks, quantum trading strategies, model risk management, regulated AI systems, and scientific computing.
 
 Two operating modes, both fully deterministic:
 

@@ -12,3 +12,10 @@ bash scripts/runpod_v2_test.sh
 ```
 
 No token, no Mac Desktop path, no `pod-setup`.
+
+**Every new pod terminal** (fixes `cargo: command not found`):
+
+```bash
+source /workspace/attention-transformer-v2/scripts/pod_env.sh
+bash /workspace/attention-transformer-v2/scripts/gpu_quick.sh
+```
