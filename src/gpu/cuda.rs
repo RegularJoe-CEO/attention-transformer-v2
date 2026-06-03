@@ -124,9 +124,11 @@ extern "C" {
         Output: *mut f32,
         seq_len: i32,
         head_dim: i32,
+        num_heads: i32,
         scale: f32,
         stream: *mut c_void,
     );
+    fn waller_v7_should_use(seq_len: i32, head_dim: i32, num_heads: i32) -> i32;
 }
 
 #[cfg(all(feature = "cuda-quant", not(cuda_compilation_failed)))]
@@ -520,9 +522,6 @@ impl CudaWallerBuffers {
             scale,
             self.stream,
         );
-        cuda_stream_synchronize(self.stream);
-        let kernel_ms = t1.elapsed().as_secs_f64() * 1000.0;
-
         let mut host_out = if need_output {
             vec![0.0f32; total]
         } else {
@@ -536,9 +535,14 @@ impl CudaWallerBuffers {
                 byte_len,
                 self.stream,
             );
-            cuda_stream_synchronize(self.stream);
         }
-        let d2h_ms = t2.elapsed().as_secs_f64() * 1000.0;
+        cuda_stream_synchronize(self.stream);
+        let kernel_ms = t1.elapsed().as_secs_f64() * 1000.0;
+        let d2h_ms = if need_output {
+            t2.elapsed().as_secs_f64() * 1000.0
+        } else {
+            0.0
+        };
 
         Ok((kernel_ms, d2h_ms, host_out))
     }
@@ -738,6 +742,32 @@ pub fn pack_w_qkv_host(wq: &[f32], wk: &[f32], wv: &[f32], hidden: usize) -> Vec
         }
     }
     out
+}
+
+/// Tiled cuBLAS Waller v7 (long-context TRADE). Force: `LUXI_CUDA_V7=1`. Auto @ seq≥2048 unless `LUXI_CUDA_V7_AUTO=0`.
+pub fn cuda_use_v7_attention(seq_len: usize, head_dim: usize, num_heads: usize) -> bool {
+    if cuda_receipt_audit_mode() {
+        return false;
+    }
+    if std::env::var("LUXI_CUDA_V7")
+        .map(|v| v == "0" || v.eq_ignore_ascii_case("false"))
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    if std::env::var("LUXI_CUDA_V7")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    unsafe {
+        waller_v7_should_use(
+            seq_len as i32,
+            head_dim as i32,
+            num_heads as i32,
+        ) != 0
+    }
 }
 
 /// P0: device LN1 + packed QKV GEMM (default TRADE). Off: `LUXI_CUDA_CPU_QKV=1` or AUDIT.
@@ -1312,6 +1342,7 @@ pub unsafe fn waller_v7_trade_cuda(
         output,
         seq_len as i32,
         head_dim as i32,
+        1,
         scale,
         std::ptr::null_mut(),
     );
@@ -2163,7 +2194,6 @@ pub unsafe fn layer_forward_cuda_trade(
     );
 
     cuda_stream_synchronize(composer.stream);
-    cuda_device_synchronize();
 
     // D2H pre-MLP activations; MLP+LN2 on CPU (receipt-safe, matches forward() post-LN2 path).
     // Do not use fused_mlp_wnsm_kernel here: it used fixed [128] stack arrays (UB at hidden>128).
@@ -2515,7 +2545,6 @@ pub unsafe fn decoder_forward_cuda_quant_stack(
         )?;
 
         if let Some(next_layer) = tail.first_mut() {
-            cuda_stream_synchronize(bufs.stream);
             let d_proj = bufs.d_proj;
             let next_composer = next_layer
                 .cuda_layer_composer
@@ -2527,7 +2556,6 @@ pub unsafe fn decoder_forward_cuda_quant_stack(
                 total * 4,
                 bufs.stream,
             );
-            cuda_stream_synchronize(bufs.stream);
         }
     }
 
@@ -2616,7 +2644,6 @@ pub unsafe fn layer_forward_cuda_trade_gpu_post(
     );
 
     cuda_stream_synchronize(stream);
-    cuda_device_synchronize();
 
     let mut host_out = vec![0.0f32; total];
     cuda_memcpy_d2h_async(

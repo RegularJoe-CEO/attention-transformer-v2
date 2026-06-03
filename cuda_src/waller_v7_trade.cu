@@ -1,10 +1,12 @@
 // attention-transformer-v2 — TRADE tiled Waller attention (online-softmax + cuBLAS)
-// Algorithm port: tiled QK GEMM + streaming softmax/V update (O(N) score tile memory).
+// Multi-head causal attention; persistent device workspace (no per-call cudaMalloc).
 
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 #include <math.h>
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 
 #define WALLER_V7_TILE 512
 
@@ -87,7 +89,64 @@ static cublasHandle_t v7_cublas_handle() {
     return h;
 }
 
-extern "C" void launch_waller_v7_trade(
+struct V7Workspace {
+    float* d_scores = nullptr;
+    float* d_m = nullptr;
+    float* d_l = nullptr;
+    size_t score_bytes = 0;
+    int seq_cap = 0;
+};
+
+static V7Workspace g_v7_ws;
+
+static int v7_env_on(const char* name) {
+    const char* v = getenv(name);
+    return v != nullptr && (v[0] == '1' || (v[0] == 't' && v[1] == 'r'));
+}
+
+static int v7_env_off(const char* name) {
+    const char* v = getenv(name);
+    return v != nullptr && (v[0] == '0' || (v[0] == 'f' && v[1] == 'a'));
+}
+
+// TRADE auto: tiled path when seq exceeds register-kernel sweet spot (override with LUXI_CUDA_V7).
+extern "C" int waller_v7_should_use(int seq_len, int head_dim, int num_heads) {
+    (void)head_dim;
+    (void)num_heads;
+    if (v7_env_off("LUXI_CUDA_V7")) return 0;
+    if (v7_env_on("LUXI_CUDA_V7")) return 1;
+    const char* auto_env = getenv("LUXI_CUDA_V7_AUTO");
+    if (auto_env != nullptr && auto_env[0] == '0') return 0;
+    return seq_len >= 2048 ? 1 : 0;
+}
+
+static int v7_ensure_workspace(int seq_len) {
+    size_t score_bytes = (size_t)WALLER_V7_TILE * WALLER_V7_TILE * sizeof(float);
+    size_t ml_bytes = (size_t)seq_len * sizeof(float);
+    if (seq_len <= g_v7_ws.seq_cap && g_v7_ws.d_scores != nullptr) {
+        return 0;
+    }
+    if (g_v7_ws.d_scores) cudaFree(g_v7_ws.d_scores);
+    if (g_v7_ws.d_m) cudaFree(g_v7_ws.d_m);
+    if (g_v7_ws.d_l) cudaFree(g_v7_ws.d_l);
+    g_v7_ws.d_scores = nullptr;
+    g_v7_ws.d_m = nullptr;
+    g_v7_ws.d_l = nullptr;
+
+    int new_cap = seq_len;
+    int grow = g_v7_ws.seq_cap > 0 ? g_v7_ws.seq_cap : 512;
+    while (grow < new_cap) grow *= 2;
+    g_v7_ws.seq_cap = grow;
+
+    ml_bytes = (size_t)g_v7_ws.seq_cap * sizeof(float);
+    if (cudaMalloc(&g_v7_ws.d_scores, score_bytes) != cudaSuccess) return -1;
+    if (cudaMalloc(&g_v7_ws.d_m, ml_bytes) != cudaSuccess) return -1;
+    if (cudaMalloc(&g_v7_ws.d_l, ml_bytes) != cudaSuccess) return -1;
+    g_v7_ws.score_bytes = score_bytes;
+    return 0;
+}
+
+static void v7_one_head(
     const float* Q,
     const float* K,
     const float* V,
@@ -98,20 +157,14 @@ extern "C" void launch_waller_v7_trade(
     cudaStream_t stream
 ) {
     if (seq_len <= 0 || head_dim <= 0) return;
+    if (v7_ensure_workspace(seq_len) != 0) return;
 
     cublasHandle_t handle = v7_cublas_handle();
     cublasSetStream(handle, stream);
 
     size_t mat_size = (size_t)seq_len * head_dim * sizeof(float);
-    size_t score_tile_size = (size_t)WALLER_V7_TILE * WALLER_V7_TILE * sizeof(float);
-
-    float *d_scores = nullptr, *d_m = nullptr, *d_l = nullptr;
-    cudaMalloc(&d_scores, score_tile_size);
-    cudaMalloc(&d_m, (size_t)seq_len * sizeof(float));
-    cudaMalloc(&d_l, (size_t)seq_len * sizeof(float));
-
     cudaMemsetAsync(Output, 0, mat_size, stream);
-    v7_init_ml<<<(seq_len + 255) / 256, 256, 0, stream>>>(d_m, d_l, seq_len);
+    v7_init_ml<<<(seq_len + 255) / 256, 256, 0, stream>>>(g_v7_ws.d_m, g_v7_ws.d_l, seq_len);
 
     float alpha = 1.0f, beta = 0.0f;
 
@@ -127,17 +180,34 @@ extern "C" void launch_waller_v7_trade(
                 K + col_start * head_dim, head_dim,
                 Q + row_start * head_dim, head_dim,
                 &beta,
-                d_scores, WALLER_V7_TILE);
+                g_v7_ws.d_scores, WALLER_V7_TILE);
             v7_fused_softmax_v_update<<<tile_rows, 128, 0, stream>>>(
-                d_scores, V + col_start * head_dim,
-                Output, d_m, d_l,
+                g_v7_ws.d_scores, V + col_start * head_dim,
+                Output, g_v7_ws.d_m, g_v7_ws.d_l,
                 row_start, col_start, tile_rows, tile_cols, WALLER_V7_TILE,
                 seq_len, head_dim, scale);
         }
     }
-    v7_normalize_output<<<seq_len, 128, 0, stream>>>(Output, d_l, seq_len, head_dim);
+    v7_normalize_output<<<seq_len, 128, 0, stream>>>(Output, g_v7_ws.d_l, seq_len, head_dim);
+}
 
-    cudaFree(d_scores);
-    cudaFree(d_m);
-    cudaFree(d_l);
+extern "C" void launch_waller_v7_trade(
+    const float* Q,
+    const float* K,
+    const float* V,
+    float* Output,
+    int seq_len,
+    int head_dim,
+    int num_heads,
+    float scale,
+    cudaStream_t stream
+) {
+    if (seq_len <= 0 || head_dim <= 0 || num_heads <= 0) return;
+    const int hidden = head_dim * num_heads;
+    for (int h = 0; h < num_heads; h++) {
+        const int off = h * head_dim;
+        v7_one_head(
+            Q + off, K + off, V + off, Output + off,
+            seq_len, head_dim, scale, stream);
+    }
 }

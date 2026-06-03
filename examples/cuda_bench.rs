@@ -18,8 +18,8 @@ fn main() {
     use std::time::Instant;
 
     use attention_transformer::gpu::cuda::{
-        waller_operator_cuda_blocking, waller_operator_cuda_persistent, CudaWallerBuffers,
-        CudaWallerTimings,
+        cuda_use_v7_attention, waller_operator_cuda_blocking, waller_operator_cuda_persistent,
+        CudaWallerBuffers, CudaWallerTimings,
     };
 
     fn arg<T: std::str::FromStr>(idx: usize, default: T) -> T {
@@ -128,6 +128,11 @@ fn main() {
         iters, seq, hidden, heads, head_dim, scale
     );
     println!(" elements per tensor: {}  ({} bytes f32)", total, total * 4);
+    let v7 = cuda_use_v7_attention(seq, head_dim, heads);
+    println!(
+        " attention kernel: {} (v7 auto @ seq≥2048; LUXI_CUDA_V7=1 force, =0 disable)",
+        if v7 { "tiled v7 (cuBLAS)" } else { "register O(N) waller" }
+    );
     println!("------------------------------------------------------------");
 
     print!(" Warmup (persistent)... ");
@@ -196,6 +201,18 @@ fn main() {
         checksum += out[0] as f64 + out[out.len() - 1] as f64;
     }
     print_stats("DEVICE-RESIDENT (kernel+D2H only, QKV on GPU)", &resident_samples, flops_per_iter);
+
+    let mut kernel_only_samples = Vec::with_capacity(iters);
+    for _ in 0..iters {
+        let t0 = Instant::now();
+        unsafe {
+            resident
+                .launch_only(total, seq, head_dim, heads, scale, false)
+                .expect("launch_only kernel-only failed");
+        }
+        kernel_only_samples.push(t0.elapsed().as_secs_f64() * 1000.0);
+    }
+    print_stats("KERNEL-ONLY (QKV on GPU, no D2H — headline TRADE ceiling)", &kernel_only_samples, flops_per_iter);
 
     // Split-path fused Waller+wo (production attn GPU); QKV already on device.
     print!("\n SPLIT-FUSED waller+wo (pinned D2H)... ");

@@ -18,8 +18,13 @@ echo "In RunPod → your pod → Connect, copy ONE of these:"
 echo "  • RECOMMENDED: \"SSH over exposed TCP\"  (root@IP -p PORT ...)"
 echo "  • Or: \"SSH\" proxy line (xxxx@ssh.runpod.io -i ...)"
 echo ""
-echo "Paste the full line below (including 'ssh' at the start), then Enter:"
-read -r PASTE
+if [[ -n "${1:-}" ]]; then
+  PASTE="$*"
+  echo "Using pasted argument: $PASTE"
+else
+  echo "Paste the full line below (including 'ssh' at the start), then Enter:"
+  read -r PASTE
+fi
 
 PASTE="${PASTE#ssh }"
 PASTE="${PASTE#SSH }"

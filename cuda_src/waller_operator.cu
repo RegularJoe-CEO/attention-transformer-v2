@@ -19,6 +19,19 @@
 #include <cuda_runtime.h>
 #include <math.h>
 
+extern "C" int waller_v7_should_use(int seq_len, int head_dim, int num_heads);
+extern "C" void launch_waller_v7_trade(
+    const float* Q,
+    const float* K,
+    const float* V,
+    float* Output,
+    int seq_len,
+    int head_dim,
+    int num_heads,
+    float scale,
+    cudaStream_t stream
+);
+
 __device__ void welford_ln_f32_mlp(
     const float* __restrict__ in,
     float* __restrict__ out,
@@ -466,6 +479,10 @@ extern "C" void launch_waller_operator(
     float scale,
     cudaStream_t stream
 ) {
+    if (waller_v7_should_use(seq_len, head_dim, num_heads)) {
+        launch_waller_v7_trade(Q, K, V, Output, seq_len, head_dim, num_heads, scale, stream);
+        return;
+    }
     const int total = seq_len * num_heads;
     const char* smem_env = getenv("LUXI_WALLER_SMEM");
     const int use_smem = (smem_env != nullptr && smem_env[0] == '1');
