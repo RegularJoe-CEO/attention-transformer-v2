@@ -1262,9 +1262,7 @@ mod tests {
 /// Cache-blocked GEMM (M x K) @ (K x N) -> (M x N)
 /// Keeps weights (B) stationary in tiles and walks K left-to-right
 /// for bit-exact determinism with the existing matmul.
-/// Cache-blocked GEMM (M x K) @ (K x N) -> (M x N)
-/// Keeps weights (B) stationary in tiles and walks K left-to-right
-/// for bit-exact determinism with the existing matmul.
+#[allow(clippy::items_after_test_module)]
 #[inline]
 pub fn matmul_blocked(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
     const MC: usize = 64;

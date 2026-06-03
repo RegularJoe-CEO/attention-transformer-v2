@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Quant TRADE regression gate (H100 NVL). See docs/QUANT_TRADE_LOCKED.md
 set -euo pipefail
-cd "${INSTALL_DIR:-/workspace/attention-transformer}"
+cd "${INSTALL_DIR:-/workspace/attention-transformer-v2}"
 export PATH="/usr/local/cuda/bin:${HOME}/.cargo/bin:${PATH:-}"
 export CUDA_ARCH="${CUDA_ARCH:-90}"
 source "${HOME}/.cargo/env" 2>/dev/null || true

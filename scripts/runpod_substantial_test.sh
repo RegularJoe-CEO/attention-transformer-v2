@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Substantial CUDA + determinism test suite for RunPod (H100 or similar).
 #
-#   cd /workspace/attention-transformer
+#   cd /workspace/attention-transformer-v2
 #   git fetch origin main && git reset --hard origin/main
 #   bash scripts/runpod_substantial_test.sh
 #
@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-INSTALL_DIR="${INSTALL_DIR:-/workspace/attention-transformer}"
+INSTALL_DIR="${INSTALL_DIR:-/workspace/attention-transformer-v2}"
 cd "$INSTALL_DIR"
 
 export PATH="/usr/local/cuda/bin:${PATH:-}"
@@ -162,7 +162,7 @@ BENCH_GFLOP_J="$(grep 'GFLOP/s per W' "$LOGDIR/cuda_bench.txt" 2>/dev/null | awk
   echo "## How to re-run"
   echo ""
   echo '```bash'
-  echo "cd /workspace/attention-transformer"
+  echo "cd /workspace/attention-transformer-v2"
   echo "git fetch origin main && git reset --hard origin/main"
   echo "export PATH=\"/usr/local/cuda/bin:\$HOME/.cargo/bin:\$PATH\""
   echo "export CUDA_ARCH=90"

@@ -24,9 +24,7 @@ fn waller_run(
         return waller_operator_parallel(q, k, v, seq_len, head_dim, scale);
     }
     #[cfg(not(feature = "rayon"))]
-    {
-        return waller_operator(q, k, v, seq_len, head_dim, scale);
-    }
+    waller_operator(q, k, v, seq_len, head_dim, scale)
 }
 
 fn main() {

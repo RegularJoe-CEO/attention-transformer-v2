@@ -744,30 +744,22 @@ pub fn pack_w_qkv_host(wq: &[f32], wk: &[f32], wv: &[f32], hidden: usize) -> Vec
     out
 }
 
-/// Tiled cuBLAS Waller v7 (long-context TRADE). Force: `LUXI_CUDA_V7=1`. Auto @ seq≥2048 unless `LUXI_CUDA_V7_AUTO=0`.
+/// Tiled cuBLAS Waller v7 (long-context TRADE). Policy lives in `waller_v7_should_use` (C++).
+#[cfg(all(feature = "cuda", not(cuda_compilation_failed)))]
 pub fn cuda_use_v7_attention(seq_len: usize, head_dim: usize, num_heads: usize) -> bool {
-    if cuda_receipt_audit_mode() {
-        return false;
-    }
-    if std::env::var("LUXI_CUDA_V7")
-        .map(|v| v == "0" || v.eq_ignore_ascii_case("false"))
-        .unwrap_or(false)
-    {
-        return false;
-    }
-    if std::env::var("LUXI_CUDA_V7")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
-    {
-        return true;
-    }
-    unsafe {
-        waller_v7_should_use(
-            seq_len as i32,
-            head_dim as i32,
-            num_heads as i32,
-        ) != 0
-    }
+    !cuda_receipt_audit_mode()
+        && unsafe {
+            waller_v7_should_use(
+                seq_len as i32,
+                head_dim as i32,
+                num_heads as i32,
+            ) != 0
+        }
+}
+
+#[cfg(any(not(feature = "cuda"), cuda_compilation_failed))]
+pub fn cuda_use_v7_attention(_seq_len: usize, _head_dim: usize, _num_heads: usize) -> bool {
+    false
 }
 
 /// P0: device LN1 + packed QKV GEMM (default TRADE). Off: `LUXI_CUDA_CPU_QKV=1` or AUDIT.
@@ -1321,7 +1313,7 @@ pub unsafe fn mega_fused_layer_cuda_with_persistent_weights(
     )
 }
 
-/// TRADE tiled Waller v7 path (cuBLAS + online softmax tiles). Single-head layout `[seq, head_dim]`.
+/// TRADE tiled Waller v7 (cuBLAS + online softmax). Layout `[seq, num_heads * head_dim]`.
 #[cfg(all(feature = "cuda", not(cuda_compilation_failed)))]
 pub unsafe fn waller_v7_trade_cuda(
     q: *const f32,
@@ -1330,7 +1322,9 @@ pub unsafe fn waller_v7_trade_cuda(
     output: *mut f32,
     seq_len: usize,
     head_dim: usize,
+    num_heads: usize,
     scale: f32,
+    stream: *mut c_void,
 ) -> Result<(), String> {
     if q.is_null() || k.is_null() || v.is_null() || output.is_null() {
         return Err("null pointer".to_string());
@@ -1342,13 +1336,10 @@ pub unsafe fn waller_v7_trade_cuda(
         output,
         seq_len as i32,
         head_dim as i32,
-        1,
+        num_heads as i32,
         scale,
-        std::ptr::null_mut(),
+        stream,
     );
-    if cudaDeviceSynchronize() != 0 {
-        return Err("cudaDeviceSynchronize failed".to_string());
-    }
     Ok(())
 }
 

@@ -98,7 +98,7 @@ Pass: memory slopes; WNSM 0.00e0; **witness receipt** round-trip (not `to_bits` 
 | `cuda_layer_bench` | **~6.8 ms** | Full TRADE layer |
 | `cuda_quant_bench` | **~69 ms** | 12 layers (~5.8 ms/layer) |
 
-**RunPod one-liner:** `cd /workspace/attention-transformer && bash scripts/runpod_quant_gate.sh`
+**RunPod one-liner:** `cd /workspace/attention-transformer-v2 && source scripts/pod_env.sh && bash scripts/gpu_quick.sh`
 
 Avoid: `LUXI_CUDA_ROW_FUSED=1`, `LUXI_CUDA_CPU_QKV=1` (slow/debug).
 

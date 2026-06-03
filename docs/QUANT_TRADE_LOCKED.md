@@ -68,7 +68,7 @@ Evidence sweeps (optional): `scaling_sweep`, `energy_sweep` → see [`SCALING_EV
 
 ## 4. Instructions — NVIDIA / RunPod
 
-Always work from the repo root (e.g. `/workspace/attention-transformer` on RunPod — not `/`).
+Always work from the repo root (e.g. `/workspace/attention-transformer-v2` on RunPod — not `/`).
 
 ```bash
 export CUDA_ARCH=90 PATH="/usr/local/cuda/bin:$HOME/.cargo/bin:$PATH"

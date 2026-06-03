@@ -1,18 +1,17 @@
 // attention-transformer-v2 — TRADE tiled Waller attention (online-softmax + cuBLAS)
-// Multi-head causal attention; persistent device workspace (no per-call cudaMalloc).
+// Multi-head layout [seq, hidden] with hidden = num_heads * head_dim; persistent workspace.
 
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 #include <math.h>
 #include <algorithm>
 #include <cstdlib>
-#include <cstring>
 
 #define WALLER_V7_TILE 512
 
 __global__ void v7_fused_softmax_v_update(
     const float* __restrict__ scores,
-    const float* __restrict__ V_tile,
+    const float* __restrict__ V,
     float* __restrict__ O,
     float* __restrict__ m_global,
     float* __restrict__ l_global,
@@ -23,6 +22,8 @@ __global__ void v7_fused_softmax_v_update(
     int score_ld,
     int seq_len,
     int head_dim,
+    int hidden,
+    int head_off,
     float scale
 ) {
     int local_row = blockIdx.x;
@@ -50,13 +51,14 @@ __global__ void v7_fused_softmax_v_update(
     float l_new = l_old * rescale + exp_sum;
 
     for (int d = tid; d < head_dim; d += blockDim.x) {
-        float acc = O[row * head_dim + d] * rescale;
+        float acc = O[row * hidden + head_off + d] * rescale;
         for (int c = 0; c < max_col_for_row; c++) {
             float s = scores[local_row * score_ld + c] * scale;
             float w = expf(s - m_new);
-            acc += w * V_tile[c * head_dim + d];
+            int col = col_offset + c;
+            acc += w * V[col * hidden + head_off + d];
         }
-        O[row * head_dim + d] = acc;
+        O[row * hidden + head_off + d] = acc;
     }
     if (tid == 0) {
         m_global[row] = m_new;
@@ -64,12 +66,19 @@ __global__ void v7_fused_softmax_v_update(
     }
 }
 
-__global__ void v7_normalize_output(float* O, const float* l, int seq_len, int head_dim) {
+__global__ void v7_normalize_output(
+    float* O,
+    const float* l,
+    int seq_len,
+    int head_dim,
+    int hidden,
+    int head_off
+) {
     int row = blockIdx.x;
     if (row >= seq_len) return;
     float norm = l[row];
     for (int d = threadIdx.x; d < head_dim; d += blockDim.x) {
-        O[row * head_dim + d] /= norm;
+        O[row * hidden + head_off + d] /= norm;
     }
 }
 
@@ -93,7 +102,6 @@ struct V7Workspace {
     float* d_scores = nullptr;
     float* d_m = nullptr;
     float* d_l = nullptr;
-    size_t score_bytes = 0;
     int seq_cap = 0;
 };
 
@@ -109,7 +117,6 @@ static int v7_env_off(const char* name) {
     return v != nullptr && (v[0] == '0' || (v[0] == 'f' && v[1] == 'a'));
 }
 
-// TRADE auto: tiled path when seq exceeds register-kernel sweet spot (override with LUXI_CUDA_V7).
 extern "C" int waller_v7_should_use(int seq_len, int head_dim, int num_heads) {
     (void)head_dim;
     (void)num_heads;
@@ -121,8 +128,6 @@ extern "C" int waller_v7_should_use(int seq_len, int head_dim, int num_heads) {
 }
 
 static int v7_ensure_workspace(int seq_len) {
-    size_t score_bytes = (size_t)WALLER_V7_TILE * WALLER_V7_TILE * sizeof(float);
-    size_t ml_bytes = (size_t)seq_len * sizeof(float);
     if (seq_len <= g_v7_ws.seq_cap && g_v7_ws.d_scores != nullptr) {
         return 0;
     }
@@ -133,16 +138,15 @@ static int v7_ensure_workspace(int seq_len) {
     g_v7_ws.d_m = nullptr;
     g_v7_ws.d_l = nullptr;
 
-    int new_cap = seq_len;
     int grow = g_v7_ws.seq_cap > 0 ? g_v7_ws.seq_cap : 512;
-    while (grow < new_cap) grow *= 2;
+    while (grow < seq_len) grow *= 2;
     g_v7_ws.seq_cap = grow;
 
-    ml_bytes = (size_t)g_v7_ws.seq_cap * sizeof(float);
+    size_t score_bytes = (size_t)WALLER_V7_TILE * WALLER_V7_TILE * sizeof(float);
+    size_t ml_bytes = (size_t)g_v7_ws.seq_cap * sizeof(float);
     if (cudaMalloc(&g_v7_ws.d_scores, score_bytes) != cudaSuccess) return -1;
     if (cudaMalloc(&g_v7_ws.d_m, ml_bytes) != cudaSuccess) return -1;
     if (cudaMalloc(&g_v7_ws.d_l, ml_bytes) != cudaSuccess) return -1;
-    g_v7_ws.score_bytes = score_bytes;
     return 0;
 }
 
@@ -153,6 +157,8 @@ static void v7_one_head(
     float* Output,
     int seq_len,
     int head_dim,
+    int hidden,
+    int head_off,
     float scale,
     cudaStream_t stream
 ) {
@@ -162,8 +168,6 @@ static void v7_one_head(
     cublasHandle_t handle = v7_cublas_handle();
     cublasSetStream(handle, stream);
 
-    size_t mat_size = (size_t)seq_len * head_dim * sizeof(float);
-    cudaMemsetAsync(Output, 0, mat_size, stream);
     v7_init_ml<<<(seq_len + 255) / 256, 256, 0, stream>>>(g_v7_ws.d_m, g_v7_ws.d_l, seq_len);
 
     float alpha = 1.0f, beta = 0.0f;
@@ -177,18 +181,19 @@ static void v7_one_head(
                 handle, CUBLAS_OP_T, CUBLAS_OP_N,
                 tile_cols, tile_rows, head_dim,
                 &alpha,
-                K + col_start * head_dim, head_dim,
-                Q + row_start * head_dim, head_dim,
+                K + col_start * hidden + head_off, hidden,
+                Q + row_start * hidden + head_off, hidden,
                 &beta,
                 g_v7_ws.d_scores, WALLER_V7_TILE);
             v7_fused_softmax_v_update<<<tile_rows, 128, 0, stream>>>(
-                g_v7_ws.d_scores, V + col_start * head_dim,
+                g_v7_ws.d_scores, V,
                 Output, g_v7_ws.d_m, g_v7_ws.d_l,
                 row_start, col_start, tile_rows, tile_cols, WALLER_V7_TILE,
-                seq_len, head_dim, scale);
+                seq_len, head_dim, hidden, head_off, scale);
         }
     }
-    v7_normalize_output<<<seq_len, 128, 0, stream>>>(Output, g_v7_ws.d_l, seq_len, head_dim);
+    v7_normalize_output<<<seq_len, 128, 0, stream>>>(
+        Output, g_v7_ws.d_l, seq_len, head_dim, hidden, head_off);
 }
 
 extern "C" void launch_waller_v7_trade(
@@ -206,8 +211,6 @@ extern "C" void launch_waller_v7_trade(
     const int hidden = head_dim * num_heads;
     for (int h = 0; h < num_heads; h++) {
         const int off = h * head_dim;
-        v7_one_head(
-            Q + off, K + off, V + off, Output + off,
-            seq_len, head_dim, scale, stream);
+        v7_one_head(Q, K, V, Output, seq_len, head_dim, hidden, off, scale, stream);
     }
 }

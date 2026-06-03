@@ -49,7 +49,7 @@ fn embed(token: usize) -> Vec<f32> {
 /// context. Fixed left-to-right accumulation — this is the bit-locked path.
 fn true_logits(context: &[usize]) -> Vec<f32> {
     // Summarize context with a fixed, order-preserving fold (recency-weighted).
-    let mut acc = vec![0f32; DIM];
+    let mut acc = [0f32; DIM];
     for (pos, &tok) in context.iter().enumerate() {
         let e = embed(tok);
         let w = 1.0 / (1.0 + (context.len() - 1 - pos) as f32);

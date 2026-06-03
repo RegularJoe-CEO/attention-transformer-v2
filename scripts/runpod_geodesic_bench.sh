@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Geodesic P0+P1 bench on RunPod (H100: export CUDA_ARCH=90).
 set -euo pipefail
-cd "${INSTALL_DIR:-/workspace/attention-transformer}"
+cd "${INSTALL_DIR:-/workspace/attention-transformer-v2}"
 export PATH="/usr/local/cuda/bin:${HOME}/.cargo/bin:${PATH}"
 export CUDA_ARCH="${CUDA_ARCH:-90}"
 source "${HOME}/.cargo/env" 2>/dev/null || true
