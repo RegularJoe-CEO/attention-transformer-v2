@@ -18,12 +18,14 @@ std = []
 rayon = ["dep:rayon"]
 simd = []
 cuda = ["dep:cc", "dep:rayon"] # CUDA kernels + parallel CPU QKV/post on split path
+flash-bridge = ["cuda", "dep:pyo3"] # TRADE: flash_attn via PyTorch on device QKV (RunPod)
 cuda-quant = []                # Lane B: CUDA INT8 GEMM (separate receipt contract from f32 gold)
 gpt2 = ["dep:safetensors", "dep:memmap2", "dep:tokenizers"]  # Optional: real GPT-2 124M model loading + inference (CPU only)
 
 [dependencies]
 sha2 = { version = "0.10", default-features = false, features = ["std"] }
 rayon = { version = "1.10", optional = true }
+pyo3 = { version = "0.22", optional = true, features = ["auto-initialize"] }
 
 # gpt2 feature dependencies (CPU-only GPT-2 runner)
 safetensors = { version = "0.4", optional = true }

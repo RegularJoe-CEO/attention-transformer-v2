@@ -522,34 +522,17 @@ impl CudaWallerBuffers {
         let byte_len = total * std::mem::size_of::<f32>();
 
         let t1 = std::time::Instant::now();
-        if !cuda_receipt_audit_mode()
-            && crate::trade_attn::cuda_trade_attn_backend()
-                != crate::trade_attn::TradeAttnBackend::Waller
-        {
-            launch_trade_attention(
-                self.d_q,
-                self.d_k,
-                self.d_v,
-                self.d_out,
-                seq_len as i32,
-                head_dim as i32,
-                num_heads as i32,
-                scale,
-                self.stream,
-            );
-        } else {
-            launch_waller_operator(
-                self.d_q,
-                self.d_k,
-                self.d_v,
-                self.d_out,
-                seq_len as i32,
-                head_dim as i32,
-                num_heads as i32,
-                scale,
-                self.stream,
-            );
-        }
+        launch_trade_attn_kernel(
+            self.d_q,
+            self.d_k,
+            self.d_v,
+            self.d_out,
+            seq_len,
+            head_dim,
+            num_heads,
+            scale,
+            self.stream,
+        )?;
         cuda_stream_synchronize(self.stream);
         let kernel_ms = t1.elapsed().as_secs_f64() * 1000.0;
 
@@ -595,7 +578,28 @@ impl CudaWallerBuffers {
         self.ensure_capacity(total)?;
 
         let t1 = std::time::Instant::now();
-        if !cuda_receipt_audit_mode()
+        if crate::trade_attn::cuda_use_flash_bridge() {
+            launch_trade_attn_kernel(
+                self.d_q,
+                self.d_k,
+                self.d_v,
+                self.d_out,
+                seq_len,
+                head_dim,
+                num_heads,
+                scale,
+                self.stream,
+            )?;
+            launch_matmul_f32(
+                self.d_out,
+                d_wo,
+                self.d_proj,
+                seq_len as i32,
+                hidden_dim as i32,
+                hidden_dim as i32,
+                self.stream,
+            );
+        } else if !cuda_receipt_audit_mode()
             && crate::trade_attn::cuda_trade_attn_backend()
                 != crate::trade_attn::TradeAttnBackend::Waller
         {
@@ -689,7 +693,28 @@ impl CudaWallerBuffers {
         self.ensure_stream()?;
         self.ensure_capacity(total)?;
 
-        if !cuda_receipt_audit_mode()
+        if crate::trade_attn::cuda_use_flash_bridge() {
+            launch_trade_attn_kernel(
+                self.d_q,
+                self.d_k,
+                self.d_v,
+                self.d_out,
+                seq_len,
+                head_dim,
+                num_heads,
+                scale,
+                self.stream,
+            )?;
+            launch_matmul_f32(
+                self.d_out,
+                d_wo,
+                self.d_proj,
+                seq_len as i32,
+                hidden_dim as i32,
+                hidden_dim as i32,
+                self.stream,
+            );
+        } else if !cuda_receipt_audit_mode()
             && crate::trade_attn::cuda_trade_attn_backend()
                 != crate::trade_attn::TradeAttnBackend::Waller
         {
@@ -2290,6 +2315,55 @@ pub fn cuda_receipt_audit_mode() -> bool {
     std::env::var("LUXI_RECEIPT_AUDIT")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
+}
+
+/// TRADE attention on device Q/K/V → `d_out` (Flash bridge, tiled dispatch, or Waller).
+#[cfg(feature = "cuda")]
+#[cfg(not(cuda_compilation_failed))]
+pub unsafe fn launch_trade_attn_kernel(
+    d_q: *mut f32,
+    d_k: *mut f32,
+    d_v: *mut f32,
+    d_out: *mut f32,
+    seq_len: usize,
+    head_dim: usize,
+    num_heads: usize,
+    scale: f32,
+    stream: *mut c_void,
+) -> Result<(), String> {
+    if crate::trade_attn::cuda_use_flash_bridge() {
+        crate::trade_flash_bridge::flash_attn_device_f32(
+            d_q, d_k, d_v, d_out, seq_len, num_heads, head_dim,
+        )
+    } else if cuda_receipt_audit_mode()
+        || crate::trade_attn::cuda_trade_attn_backend() == crate::trade_attn::TradeAttnBackend::Waller
+    {
+        launch_waller_operator(
+            d_q,
+            d_k,
+            d_v,
+            d_out,
+            seq_len as i32,
+            head_dim as i32,
+            num_heads as i32,
+            scale,
+            stream,
+        );
+        Ok(())
+    } else {
+        launch_trade_attention(
+            d_q,
+            d_k,
+            d_v,
+            d_out,
+            seq_len as i32,
+            head_dim as i32,
+            num_heads as i32,
+            scale,
+            stream,
+        );
+        Ok(())
+    }
 }
 
 pub fn cuda_use_cpu_qkv() -> bool {

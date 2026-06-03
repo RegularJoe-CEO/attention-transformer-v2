@@ -118,7 +118,7 @@ struct Fp16Ws {
 
 static Fp16Ws g_fp16_ws;
 
-static int fp16_ensure(int seq_len, int total, int head_dim) {
+static int fp16_ensure(int seq_len, int total, int /*head_dim*/) {
     int need = std::max(seq_len, total);
     if (need <= g_fp16_ws.cap && g_fp16_ws.d_q) return 0;
     auto freep = [](auto*& p) { if (p) cudaFree(p); p = nullptr; };

@@ -36,7 +36,8 @@ AUDIT lane (CI): CPU or CUDA **Waller f32** vs textbook, receipts.
 
 | Variable | Values |
 |----------|--------|
-| `LUXI_TRADE_ATTN` | `flash` (default TRADE), `waller` (legacy register), `v7` (tiled cuBLAS) |
+| `LUXI_TRADE_ATTN` | `flash` (default TRADE), `waller` (legacy register), `v7`, `fp16` (long-seq tiled only) |
+| `LUXI_FLASH_BRIDGE` | `1` = call installed `flash_attn` from Rust geodesic (needs `flash-bridge` feature) |
 | `LUXI_RECEIPT_AUDIT` | `1` → forces CPU/waller, disables flash default |
 
 ## Proof on RunPod

@@ -77,10 +77,19 @@ extern "C" void launch_trade_attention(
         return;
     }
     if (strcmp(mode, "flash") == 0 || strcmp(mode, "flash2") == 0 || strcmp(mode, "flash_attn") == 0) {
-        // Native Flash-Attn link: build with FLASH_ATTN_ROOT. Until then fp16 tiled.
-        launch_trade_fp16_attention(Q, K, V, Output, seq_len, head_dim, num_heads, scale, stream);
+        // Rust flash-bridge (pyo3) handles Flash when LUXI_FLASH_BRIDGE=1; else register waller here.
+        launch_waller_operator(Q, K, V, Output, seq_len, head_dim, num_heads, scale, stream);
         return;
     }
-    // Default TRADE v3: fp16 tiled (fp16, half, or unset)
-    launch_trade_fp16_attention(Q, K, V, Output, seq_len, head_dim, num_heads, scale, stream);
+    if (strcmp(mode, "fp16") == 0 || strcmp(mode, "fp16_tiled") == 0 || strcmp(mode, "half") == 0) {
+        // fp16 tiled is for long-seq only (short seq = thousands of tiny HGEMMs → ~60ms+).
+        if (seq_len >= 2048) {
+            launch_trade_fp16_attention(Q, K, V, Output, seq_len, head_dim, num_heads, scale, stream);
+        } else {
+            launch_waller_operator(Q, K, V, Output, seq_len, head_dim, num_heads, scale, stream);
+        }
+        return;
+    }
+    // Default TRADE v3 (unset env): fast register waller @ seq<2048, v7 @ seq>=2048 via waller_operator.
+    launch_waller_operator(Q, K, V, Output, seq_len, head_dim, num_heads, scale, stream);
 }

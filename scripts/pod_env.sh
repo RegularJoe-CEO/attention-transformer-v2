@@ -21,7 +21,9 @@ command -v nvcc >/dev/null && echo "pod_env: $(nvcc --version | grep -o 'release
 echo "pod_env: INSTALL_DIR=$INSTALL_DIR"
 echo "pod_env: run → source scripts/pod_env.sh && bash scripts/gpu_quick.sh"
 # TRADE v3 defaults (override per session)
-export LUXI_TRADE_ATTN="${LUXI_TRADE_ATTN:-fp16}"
+export LUXI_TRADE_ATTN="${LUXI_TRADE_ATTN:-flash}"
+export LUXI_FLASH_BRIDGE="${LUXI_FLASH_BRIDGE:-1}"
 unset LUXI_RECEIPT_AUDIT
-echo "pod_env: LUXI_TRADE_ATTN=$LUXI_TRADE_ATTN (fp16|flash|v7|waller)"
+echo "pod_env: LUXI_TRADE_ATTN=$LUXI_TRADE_ATTN (flash|fp16|v7|waller)"
+echo "pod_env: build TRADE → cargo build --release --features cuda,flash-bridge"
 echo "pod_env: competitive proof → bash scripts/trade_geodesic_pod.sh"

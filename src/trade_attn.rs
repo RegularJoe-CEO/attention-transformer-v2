@@ -15,14 +15,14 @@ pub enum TradeAttnBackend {
     Flash,
 }
 
-/// `LUXI_RECEIPT_AUDIT=1` → Waller. Else `LUXI_TRADE_ATTN` (default `fp16`).
+/// `LUXI_RECEIPT_AUDIT=1` → Waller. Else `LUXI_TRADE_ATTN` (default `flash`).
 pub fn cuda_trade_attn_backend() -> TradeAttnBackend {
     #[cfg(feature = "cuda")]
     if crate::gpu::cuda::cuda_receipt_audit_mode() {
         return TradeAttnBackend::Waller;
     }
     match std::env::var("LUXI_TRADE_ATTN")
-        .unwrap_or_else(|_| "fp16".into())
+        .unwrap_or_else(|_| "flash".into())
         .to_ascii_lowercase()
         .as_str()
     {
@@ -30,8 +30,20 @@ pub fn cuda_trade_attn_backend() -> TradeAttnBackend {
         "v7" | "tiled" => TradeAttnBackend::V7,
         "flash" | "flash2" | "flash_attn" => TradeAttnBackend::Flash,
         "fp16" | "fp16_tiled" | "half" => TradeAttnBackend::Fp16Tiled,
-        _ => TradeAttnBackend::Fp16Tiled,
+        _ => TradeAttnBackend::Flash,
     }
+}
+
+/// Use Flash-Attn Python bridge when this backend is active and feature is enabled.
+#[cfg(all(feature = "cuda", feature = "flash-bridge"))]
+pub fn cuda_use_flash_bridge() -> bool {
+    cuda_trade_attn_backend() == TradeAttnBackend::Flash
+        && crate::trade_flash_bridge::flash_bridge_enabled()
+}
+
+#[cfg(all(feature = "cuda", not(feature = "flash-bridge")))]
+pub fn cuda_use_flash_bridge() -> bool {
+    false
 }
 
 pub fn trade_attn_backend_label(b: TradeAttnBackend) -> &'static str {

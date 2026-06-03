@@ -25,7 +25,7 @@ if ! python3 -c "import torch" 2>/dev/null; then
 fi
 
 BENCH_LOG=$(mktemp)
-cargo run --release --features cuda --example cuda_bench -- "$ITERS" "$SEQ" "$HIDDEN" "$HEADS" 2>&1 | tee "$BENCH_LOG"
+cargo run --release --features cuda,flash-bridge --example cuda_bench -- "$ITERS" "$SEQ" "$HIDDEN" "$HEADS" 2>&1 | tee "$BENCH_LOG"
 
 WALLER_MS=$(grep -A12 "KERNEL-ONLY" "$BENCH_LOG" | grep "median" | head -1 | sed -E 's/.*:[[:space:]]*([0-9.]+).*/\1/')
 if [[ -z "$WALLER_MS" || "$WALLER_MS" == "0" ]]; then

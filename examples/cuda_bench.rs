@@ -144,7 +144,17 @@ fn main() {
         );
     }
     if backend == TradeAttnBackend::Flash {
-        println!("   flash: native fp16 tiled until FLASH_ATTN_ROOT build; or integrations/trade_geodesic_flash.py");
+        #[cfg(feature = "flash-bridge")]
+        println!(
+            "   flash-bridge: {} (rebuild --features cuda,flash-bridge; LUXI_FLASH_BRIDGE=1)",
+            if attention_transformer::trade_attn::cuda_use_flash_bridge() {
+                "ON"
+            } else {
+                "off"
+            }
+        );
+        #[cfg(not(feature = "flash-bridge"))]
+        println!("   flash-bridge: not compiled — use --features cuda,flash-bridge on pod");
     }
     println!("------------------------------------------------------------");
 
