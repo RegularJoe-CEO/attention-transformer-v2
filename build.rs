@@ -22,6 +22,8 @@ fn main() {
     println!("cargo:rerun-if-changed=cuda_src/waller_operator.cu");
     println!("cargo:rerun-if-changed=cuda_src/cuda_extras.cu");
     println!("cargo:rerun-if-changed=cuda_src/waller_v7_trade.cu");
+    println!("cargo:rerun-if-changed=cuda_src/trade_fp16_attn.cu");
+    println!("cargo:rerun-if-changed=cuda_src/trade_dispatch.cu");
     println!("cargo:rerun-if-env-changed=CUDA_ARCH");
 
     if !nvcc_available() {
@@ -37,7 +39,9 @@ fn main() {
                 .flag("-O3")
                 .file("cuda_src/waller_operator.cu")
                 .file("cuda_src/cuda_extras.cu")
-                .file("cuda_src/waller_v7_trade.cu");
+                .file("cuda_src/waller_v7_trade.cu")
+                .file("cuda_src/trade_fp16_attn.cu")
+                .file("cuda_src/trade_dispatch.cu");
 
             // H100 (sm_90) + portable sm_70 fallback
             if std::env::var("CUDA_ARCH")

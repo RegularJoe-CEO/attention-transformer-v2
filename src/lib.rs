@@ -37,6 +37,7 @@ pub mod ffi;
 pub mod gpt2;
 
 pub mod gpu;
+pub mod trade_attn;
 
 #[cfg(feature = "cuda")]
 pub use gpu::cuda;

@@ -38,3 +38,11 @@ cargo run --release --example energy_sweep > energy.csv
 ```
 
 Publish: ms/layer, TFLOPS, GB moved, W/token from `nvidia-smi`.
+## TRADE v3 (corrected — Jun 2026)
+
+- **AUDIT:** Waller f32 + receipts (`LUXI_RECEIPT_AUDIT=1`).
+- **TRADE default:** `LUXI_TRADE_ATTN=fp16` → fp16 tiled cuBLAS attention (competitive vs register Waller).
+- **Flash-class:** `LUXI_TRADE_ATTN=flash` or Python `integrations/trade_geodesic_flash.py` on pod.
+- **Do not** compare `energy.csv` multipliers to Flash — compare measured J/token @ same dtype.
+
+See `docs/TRADE_V3_ARCHITECTURE.md`, `docs/NOVEL_COMBINATIONS.md`.

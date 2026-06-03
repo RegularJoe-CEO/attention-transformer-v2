@@ -21,6 +21,9 @@ fn main() {
         cuda_use_v7_attention, waller_operator_cuda_blocking, waller_operator_cuda_persistent,
         CudaWallerBuffers, CudaWallerTimings,
     };
+    use attention_transformer::trade_attn::{
+        cuda_trade_attn_backend, trade_attn_backend_label, TradeAttnBackend,
+    };
 
     fn arg<T: std::str::FromStr>(idx: usize, default: T) -> T {
         std::env::args()
@@ -121,18 +124,28 @@ fn main() {
     let flops_per_iter = 4.0 * (seq as f64) * (seq as f64) * (head_dim as f64) * (heads as f64);
 
     println!("============================================================");
-    println!(" CUDA Waller Operator — Sustained Throughput Benchmark");
+    println!(" CUDA TRADE Attention — Sustained Throughput Benchmark");
     println!("============================================================");
     println!(
         " iters={}  seq={}  hidden={}  heads={}  head_dim={}  scale={:.6}",
         iters, seq, hidden, heads, head_dim, scale
     );
     println!(" elements per tensor: {}  ({} bytes f32)", total, total * 4);
+    let backend = cuda_trade_attn_backend();
     let v7 = cuda_use_v7_attention(seq, head_dim, heads);
     println!(
-        " attention kernel: {} (v7 auto @ seq≥2048; LUXI_CUDA_V7=1 force, =0 disable)",
-        if v7 { "tiled v7 (cuBLAS)" } else { "register O(N) waller" }
+        " TRADE attention: {} (LUXI_TRADE_ATTN; AUDIT→waller via LUXI_RECEIPT_AUDIT=1)",
+        trade_attn_backend_label(backend)
     );
+    if backend == TradeAttnBackend::Waller {
+        println!(
+            "   waller sub-path: {} (v7 @ seq≥2048 unless LUXI_CUDA_V7)",
+            if v7 { "tiled v7" } else { "register O(N)" }
+        );
+    }
+    if backend == TradeAttnBackend::Flash {
+        println!("   flash: native fp16 tiled until FLASH_ATTN_ROOT build; or integrations/trade_geodesic_flash.py");
+    }
     println!("------------------------------------------------------------");
 
     print!(" Warmup (persistent)... ");

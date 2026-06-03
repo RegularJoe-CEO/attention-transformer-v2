@@ -129,6 +129,17 @@ extern "C" {
         stream: *mut c_void,
     );
     fn waller_v7_should_use(seq_len: i32, head_dim: i32, num_heads: i32) -> i32;
+    fn launch_trade_attention(
+        Q: *const f32,
+        K: *const f32,
+        V: *const f32,
+        Output: *mut f32,
+        seq_len: i32,
+        head_dim: i32,
+        num_heads: i32,
+        scale: f32,
+        stream: *mut c_void,
+    );
 }
 
 #[cfg(all(feature = "cuda-quant", not(cuda_compilation_failed)))]
@@ -511,17 +522,34 @@ impl CudaWallerBuffers {
         let byte_len = total * std::mem::size_of::<f32>();
 
         let t1 = std::time::Instant::now();
-        launch_waller_operator(
-            self.d_q,
-            self.d_k,
-            self.d_v,
-            self.d_out,
-            seq_len as i32,
-            head_dim as i32,
-            num_heads as i32,
-            scale,
-            self.stream,
-        );
+        if !cuda_receipt_audit_mode()
+            && crate::trade_attn::cuda_trade_attn_backend()
+                != crate::trade_attn::TradeAttnBackend::Waller
+        {
+            launch_trade_attention(
+                self.d_q,
+                self.d_k,
+                self.d_v,
+                self.d_out,
+                seq_len as i32,
+                head_dim as i32,
+                num_heads as i32,
+                scale,
+                self.stream,
+            );
+        } else {
+            launch_waller_operator(
+                self.d_q,
+                self.d_k,
+                self.d_v,
+                self.d_out,
+                seq_len as i32,
+                head_dim as i32,
+                num_heads as i32,
+                scale,
+                self.stream,
+            );
+        }
         cuda_stream_synchronize(self.stream);
         let kernel_ms = t1.elapsed().as_secs_f64() * 1000.0;
 
@@ -637,7 +665,31 @@ impl CudaWallerBuffers {
         self.ensure_stream()?;
         self.ensure_capacity(total)?;
 
-        if cuda_split_fused_wo_supported(head_dim, hidden_dim) {
+        if !cuda_receipt_audit_mode()
+            && crate::trade_attn::cuda_trade_attn_backend()
+                != crate::trade_attn::TradeAttnBackend::Waller
+        {
+            launch_trade_attention(
+                self.d_q,
+                self.d_k,
+                self.d_v,
+                self.d_out,
+                seq_len as i32,
+                head_dim as i32,
+                num_heads as i32,
+                scale,
+                self.stream,
+            );
+            launch_matmul_f32(
+                self.d_out,
+                d_wo,
+                self.d_proj,
+                seq_len as i32,
+                hidden_dim as i32,
+                hidden_dim as i32,
+                self.stream,
+            );
+        } else if cuda_split_fused_wo_supported(head_dim, hidden_dim) {
             launch_waller_fused_wo(
                 self.d_q,
                 self.d_k,
