@@ -34,6 +34,8 @@ This is the single source of truth for the assembled technology. The **pure-Rust
 >
 > **LuxiEdge build (ordered):** [`docs/LUXIEDGE_BUILD_ROADMAP.md`](docs/LUXIEDGE_BUILD_ROADMAP.md) — P&L backtest + **NPOW** scaling → 70B AUDIT → FP8 parity → PyTorch.
 
+</details>
+
 ---
 
 ## Why Quantum Traders & High-Stakes Teams Choose This Engine
