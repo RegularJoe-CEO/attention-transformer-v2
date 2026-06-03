@@ -33,6 +33,30 @@ If clone fails (private repo), use **SSH clone** after adding your pod’s publi
 
 ---
 
+## Your RunPod SSH (preconfigured)
+
+Edit `scripts/runpod.env` if the pod changes. Default:
+
+- Host: `wcjtnrd5obyie7-64411782@ssh.runpod.io`
+- Key: `~/.ssh/id_ed25519`
+
+**Commands (from repo root) — no exports needed:**
+
+```bash
+cd ~/Desktop/eRock/_audit_repos/attention-transformer-v2
+scripts/pod status    # test SSH + GPU name
+scripts/pod           # sync + full GPU test
+scripts/pod quick     # sync + cuda_verify only
+scripts/pod sync      # rsync only
+scripts/pod save "fix cuda bench"
+scripts/pod shell     # SSH into pod
+```
+
+If `scripts/pod status` says `Permission denied (publickey)`, add your Mac pubkey in RunPod:
+**Settings → SSH Public Keys** → paste output of `cat ~/.ssh/id_ed25519.pub`
+
+---
+
 ## Fastest loop for many iterations (recommended)
 
 ### A) Git push / pull (simple, good with commits)

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Single entrypoint — no env vars to remember.
+#
+#   scripts/pod           # sync + full GPU test
+#   scripts/pod quick     # sync + cuda_verify only
+#   scripts/pod sync      # rsync only
+#   scripts/pod save MSG  # git push + pod pull + cuda_verify
+#   scripts/pod shell     # SSH into pod
+#   scripts/pod status    # print SSH target + ping
+
+set -euo pipefail
+DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$DIR/.." && pwd)"
+# shellcheck source=runpod_ssh.sh
+source "$DIR/runpod_ssh.sh"
+
+cmd="${1:-full}"
+shift || true
+
+case "$cmd" in
+  status)
+    runpod_echo
+    runpod_ssh "echo connected && uname -a && nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1"
+    ;;
+  shell)
+    exec ssh "${RUNPOD_SSH_OPTS[@]}" "$RUNPOD_SSH_HOST"
+    ;;
+  sync)
+    exec bash "$DIR/pod_from_mac.sh" --sync-only
+    ;;
+  quick)
+    exec bash "$DIR/pod_from_mac.sh" --quick
+    ;;
+  save)
+    exec bash "$DIR/mac_save_and_pod_test.sh" "${1:-wip}"
+    ;;
+  full|"")
+    exec bash "$DIR/pod_from_mac.sh" full
+    ;;
+  *)
+    echo "Usage: scripts/pod [full|quick|sync|save MSG|shell|status]"
+    exit 1
+    ;;
+esac
