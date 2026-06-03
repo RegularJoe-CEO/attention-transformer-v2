@@ -4,9 +4,13 @@ This document quantifies the **electricity** story of the attention-transformer:
 why the Waller Operator and WNSM use dramatically less energy than standard
 attention, and how that advantage **widens with sequence length**.
 
-The headline result: standard attention's energy grows **quadratically** with
+The headline result: **materialized standard** attention's energy grows **quadratically** with
 sequence length, while the Waller Operator grows **linearly**. By 262,144 tokens
-the attention-stage data-movement energy gap is **4,096×**.
+the attention-stage data-movement energy gap is **4,096×** *vs that naive baseline*.
+
+**Not vs FlashAttention.** Flash also avoids full N×N score materialization in HBM.
+For the only opponent that matters, use [`FLASH_BASELINE.md`](FLASH_BASELINE.md) and
+`bash scripts/compare_flash_pod.sh` on the same pod.
 
 ## Reproduce
 

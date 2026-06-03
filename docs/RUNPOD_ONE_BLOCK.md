@@ -17,10 +17,16 @@ cargo run --release --features cuda --example cuda_bench -- 200 1024 1024 16
 
 Note the space: `--example cuda_bench` (not `--examplecuda_bench`).
 
-Energy + power (auto `cd`, `source`, dmon):
+**Flash / SDPA head-to-head (the real opponent):**
 
 ```bash
-bash /workspace/attention-transformer-v2/scripts/energy_bench_pod.sh
+bash scripts/compare_flash_pod.sh 200 1024 1024 16
+```
+
+Energy + power (theoretical HBM model — not vs Flash):
+
+```bash
+bash scripts/energy_bench_pod.sh
 ```
 
 Or manually (must **not** run from `/`):
