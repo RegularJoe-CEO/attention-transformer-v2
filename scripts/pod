@@ -18,6 +18,12 @@ cmd="${1:-full}"
 shift || true
 
 case "$cmd" in
+  setup)
+    exec bash "$DIR/pod-setup"
+    ;;
+  show-ssh)
+    runpod_ssh_display
+    ;;
   status)
     runpod_echo
     runpod_ssh "echo connected && uname -a && nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1"
@@ -38,7 +44,7 @@ case "$cmd" in
     exec bash "$DIR/pod_from_mac.sh" full
     ;;
   *)
-    echo "Usage: scripts/pod [full|quick|sync|save MSG|shell|status]"
+    echo "Usage: scripts/pod [setup|status|show-ssh|full|quick|sync|save MSG|shell]"
     exit 1
     ;;
 esac
