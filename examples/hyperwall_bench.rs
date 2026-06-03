@@ -4,7 +4,10 @@
 //! Parallel: `cargo run --release --features rayon --example hyperwall_bench`
 
 use attention_transformer::standard_attention::standard_attention;
-use attention_transformer::waller_operator::{waller_operator, waller_operator_parallel};
+#[cfg(feature = "rayon")]
+use attention_transformer::waller_operator::waller_operator_parallel;
+#[cfg(not(feature = "rayon"))]
+use attention_transformer::waller_operator::waller_operator;
 
 use std::time::Instant;
 
