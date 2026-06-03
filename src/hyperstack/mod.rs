@@ -48,4 +48,24 @@ impl HyperWallerEngine {
         (out, receipt)
     }
 
+    /// TRADE path: prefer CUDA quant stack / fused layers when compiled.
+    #[cfg(all(feature = "cuda", not(cuda_compilation_failed)))]
+    pub fn forward_trade(&mut self, hidden: &[f32], seq_len: usize) -> Result<(Vec<f32>, [u8; 32]), String> {
+        let out = self
+            .decoder
+            .forward_cuda_trade(hidden, seq_len)?;
+        Ok((out, sha256_of_f32_slice(&out)))
+    }
+
+    pub fn forward_best(&mut self, hidden: &[f32], seq_len: usize) -> (Vec<f32>, [u8; 32]) {
+        #[cfg(all(feature = "cuda", not(cuda_compilation_failed)))]
+        {
+            if self.lane == InferenceLane::Trade {
+                if let Ok(pair) = self.forward_trade(hidden, seq_len) {
+                    return pair;
+                }
+            }
+        }
+        self.forward_audit(hidden, seq_len)
+    }
 }

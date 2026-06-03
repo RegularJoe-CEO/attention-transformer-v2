@@ -57,6 +57,20 @@ def audit_mode_enabled() -> bool:
     return os.environ.get(LUXI_RECEIPT_AUDIT_ENV, "") == "1"
 
 
+def waller_attention_torch(q, k, v, *, causal=True):
+    """Re-export from waller_attention (same directory)."""
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent / "waller_attention.py"
+    spec = importlib.util.spec_from_file_location("waller_attention", path)
+    if spec is None or spec.loader is None:
+        raise ImportError("waller_attention.py not found")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.waller_attention_torch(q, k, v, causal=causal)
+
+
 class LuxiEdgeReceiptHook:
     """Register forward hook to log receipts on module outputs."""
 

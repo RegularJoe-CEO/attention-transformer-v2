@@ -153,7 +153,7 @@ pub fn waller_operator(
     output
 }
 
-/// Parallel version (rayon feature). Falls back to serial when rayon disabled.
+/// Parallel over query rows (rayon). Rows are independent — bit-identical to serial.
 #[cfg(feature = "rayon")]
 pub fn waller_operator_parallel(
     q: &[f32],
@@ -163,9 +163,42 @@ pub fn waller_operator_parallel(
     head_dim: usize,
     scale: f32,
 ) -> Vec<f32> {
-    // For production simplicity the serial version is the reference.
-    // A full parallel blocked version can be added later without changing the contract.
-    waller_operator(q, k, v, seq_len, head_dim, scale)
+    use rayon::prelude::*;
+    let mut output = vec![0.0f32; seq_len * head_dim];
+    output
+        .par_chunks_mut(head_dim)
+        .enumerate()
+        .for_each(|(i, out_row)| {
+            let q_row = &q[i * head_dim..(i + 1) * head_dim];
+            let mut softmax = OnlineSoftmax::new();
+            let mut acc = vec![0.0f32; head_dim];
+            for j in 0..=i {
+                let k_row = &k[j * head_dim..(j + 1) * head_dim];
+                let v_row = &v[j * head_dim..(j + 1) * head_dim];
+                let score: f32 = q_row
+                    .iter()
+                    .zip(k_row.iter())
+                    .map(|(&qi, &kj)| qi * kj)
+                    .sum::<f32>()
+                    * scale;
+                let old_max = softmax.max;
+                softmax.update(score);
+                if old_max != f32::NEG_INFINITY {
+                    let correction = (old_max - softmax.max).exp();
+                    for a in &mut acc {
+                        *a *= correction;
+                    }
+                }
+                let weight = (score - softmax.max).exp();
+                for (a, &vj) in acc.iter_mut().zip(v_row.iter()) {
+                    *a += weight * vj;
+                }
+            }
+            for (o, a) in out_row.iter_mut().zip(acc.iter()) {
+                *o = *a / softmax.sum;
+            }
+        });
+    output
 }
 
 #[cfg(not(feature = "rayon"))]
@@ -253,6 +286,28 @@ mod tests {
 
         for (o, n) in ours.iter().zip(naive.iter()) {
             assert!((o - n).abs() < 1e-4, "waller mismatch {} vs {}", o, n);
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "rayon")]
+    fn waller_parallel_matches_serial() {
+        let seq_len = 32;
+        let head_dim = 16;
+        let scale = 1.0 / (head_dim as f32).sqrt();
+        let q: Vec<f32> = (0..seq_len * head_dim)
+            .map(|i| (i as f32 * 0.07).sin())
+            .collect();
+        let k: Vec<f32> = (0..seq_len * head_dim)
+            .map(|i| (i as f32 * 0.11).cos())
+            .collect();
+        let v: Vec<f32> = (0..seq_len * head_dim)
+            .map(|i| (i as f32 * 0.03).sin())
+            .collect();
+        let serial = waller_operator(&q, &k, &v, seq_len, head_dim, scale);
+        let parallel = waller_operator_parallel(&q, &k, &v, seq_len, head_dim, scale);
+        for (a, b) in serial.iter().zip(parallel.iter()) {
+            assert_eq!(a.to_bits(), b.to_bits());
         }
     }
 

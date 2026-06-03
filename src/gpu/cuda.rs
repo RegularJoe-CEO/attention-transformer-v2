@@ -117,6 +117,16 @@ extern "C" {
         scale: f32,
         stream: *mut c_void,
     );
+    fn launch_waller_v7_trade(
+        Q: *const f32,
+        K: *const f32,
+        V: *const f32,
+        Output: *mut f32,
+        seq_len: i32,
+        head_dim: i32,
+        scale: f32,
+        stream: *mut c_void,
+    );
 }
 
 #[cfg(all(feature = "cuda-quant", not(cuda_compilation_failed)))]
@@ -1279,6 +1289,36 @@ pub unsafe fn mega_fused_layer_cuda_with_persistent_weights(
         params,
         std::ptr::null_mut(),
     )
+}
+
+/// TRADE tiled Waller v7 path (cuBLAS + online softmax tiles). Single-head layout `[seq, head_dim]`.
+#[cfg(all(feature = "cuda", not(cuda_compilation_failed)))]
+pub unsafe fn waller_v7_trade_cuda(
+    q: *const f32,
+    k: *const f32,
+    v: *const f32,
+    output: *mut f32,
+    seq_len: usize,
+    head_dim: usize,
+    scale: f32,
+) -> Result<(), String> {
+    if q.is_null() || k.is_null() || v.is_null() || output.is_null() {
+        return Err("null pointer".to_string());
+    }
+    launch_waller_v7_trade(
+        q,
+        k,
+        v,
+        output,
+        seq_len as i32,
+        head_dim as i32,
+        scale,
+        std::ptr::null_mut(),
+    );
+    if cudaDeviceSynchronize() != 0 {
+        return Err("cudaDeviceSynchronize failed".to_string());
+    }
+    Ok(())
 }
 
 // CUDA runtime FFI declarations (only when the cuda feature is active)

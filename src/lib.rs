@@ -19,6 +19,8 @@ pub mod mlp;
 pub mod online_softmax;
 pub mod standard_attention;
 pub mod hyperstack;
+pub mod rope_rmsnorm;
+pub mod llama;
 pub mod waller_operator;
 pub mod welford;
 pub mod wnsm_transformer;
@@ -60,6 +62,8 @@ pub use npow::{
     decode_npow_payload, encode_npow_payload, install_identity_null_basis, run_scaling_samples,
     NpowPayload, NPOW_PAYLOAD_DIM,
 };
+pub use rope_rmsnorm::{rmsnorm_f32, RopeFrequenciesF32};
+pub use llama::{Llama7bProfile, LlamaAttentionLayer};
 
 #[derive(Clone, Debug)]
 pub struct AuditReport {

@@ -120,6 +120,14 @@ path = "examples/npow_scaling_proof.rs"
 name = "hyperwall_bench"
 path = "examples/hyperwall_bench.rs"
 
+[[example]]
+name = "llama_demo"
+path = "examples/llama_demo.rs"
+
+[[example]]
+name = "long_context_bench"
+path = "examples/long_context_bench.rs"
+
 [[bench]]
 name = "transformer_forward"
 harness = false

@@ -1,9 +1,18 @@
 # HyperScale benchmark (v2)
 
+## One-command proof kit
+
+```bash
+bash scripts/commercial_proof.sh
+```
+
 ## CPU AUDIT (any machine)
 
 ```bash
 cargo run --release --example hyperwall_bench
+cargo run --release --features rayon --example hyperwall_bench
+cargo run --release --example long_context_bench
+cargo run --release --example llama_demo
 cargo run --release --example scaling_sweep > scaling.csv
 cargo run --release --example energy_sweep > energy.csv
 ```

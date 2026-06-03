@@ -21,6 +21,7 @@ fn main() {
 
     println!("cargo:rerun-if-changed=cuda_src/waller_operator.cu");
     println!("cargo:rerun-if-changed=cuda_src/cuda_extras.cu");
+    println!("cargo:rerun-if-changed=cuda_src/waller_v7_trade.cu");
     println!("cargo:rerun-if-env-changed=CUDA_ARCH");
 
     if !nvcc_available() {
@@ -35,7 +36,8 @@ fn main() {
                 .flag("-std=c++17")
                 .flag("-O3")
                 .file("cuda_src/waller_operator.cu")
-                .file("cuda_src/cuda_extras.cu");
+                .file("cuda_src/cuda_extras.cu")
+                .file("cuda_src/waller_v7_trade.cu");
 
             // H100 (sm_90) + portable sm_70 fallback
             if std::env::var("CUDA_ARCH")
@@ -54,6 +56,7 @@ fn main() {
             // Dynamic cudart: static libcudart from cc may omit cudaHostFree-era symbols on some pods.
             println!("cargo:rustc-link-search=native=/usr/local/cuda/lib64");
             println!("cargo:rustc-link-lib=dylib=cudart");
+            println!("cargo:rustc-link-lib=dylib=cublas");
             println!("cargo:rustc-cfg=has_cuda_kernels");
         }
     }

@@ -7,7 +7,7 @@ This repository is the **only** write target for the HyperScale energy-efficient
 | Audit repo | Role in v2 | Integration status |
 |------------|------------|-------------------|
 | `attention-transformer` | v1 base copied at fork | Core crate (Waller, WNSM, CUDA, GPT-2) |
-| `Geodesic-Attention-Engine-GAE-` | CUDA TRADE kernels, equivalence tests | `standard_attention` gate; `waller_v7` port planned |
+| `Geodesic-Attention-Engine-GAE-` | CUDA TRADE kernels, equivalence tests | `standard_attention` gate; `waller_v7_trade.cu` ported |
 | `Adiabatic-Transform-Engine-ATE-` | Geometric null-space MLP | Planned TRADE fusion |
 | `Luxi` | RoPE, RMSNorm, quant matmul | Planned LLaMA profile |
 | `luxi-quant-engine` | Receipts, WGPU reference | Partial via existing FFI |
